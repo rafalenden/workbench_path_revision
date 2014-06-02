@@ -2,5 +2,5 @@ name = Workbench Path Revision
 description = Path revisioning and fixes related to URL aliases and Workbench module.
 core = 7.x
 
-dependencies[] = workbench
+dependencies[] = workbench_moderation
 dependencies[] = pathauto
