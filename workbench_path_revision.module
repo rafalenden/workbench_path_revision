@@ -1,0 +1,195 @@
+<?php
+
+/**
+ * Implements hook_node_load().
+ */
+function workbench_path_revision_node_load($nodes, $types) {
+  $nids = array_keys($nodes);
+  $vids = array();
+  $languages = array();
+  foreach ($nodes as $node) {
+    $vids[] = $node->vid;
+    $languages[] = entity_language('node', $node);
+  }
+
+  $path_revisions = workbench_path_revision_load_multiple($nids, array('vid' => $vids, 'language' => $languages));
+
+  foreach ($path_revisions as $nid => $path_revision) {
+    $nodes[$nid]->workbench_path_revision = $path_revision;
+    if (isset($path_revision['pathauto'])) {
+      $nodes[$nid]->path['pathauto'] = $path_revision['pathauto'];
+    }
+  }
+}
+
+/**
+ * Implements hook_form_BASE_FORM_ID_alter() for node_form().
+ */
+function workbench_path_revision_form_node_form_alter(&$form, $form_state) {
+  $node = $form['#node'];
+
+  if (!empty($node->workbench_path_revision['alias']) && isset($form['path']['alias'])) {
+    $form['path']['alias']['#default_value'] = $node->workbench_path_revision['alias'];
+  }
+}
+
+/**
+ * Implements hook_node_presave().
+ */
+function workbench_path_revision_node_presave($node) {
+  $path_revision = array(
+    'pathauto' => isset($node->path['pathauto']) ? $node->path['pathauto'] : 0,
+    'alias' => '',
+  );
+
+  global $user;
+  if (isset($node->workbench_moderation_state_new)) {
+    if (empty($node->path['pathauto'])) {
+      $path_revision['alias'] = $node->path['alias'];
+    }
+    if ($node->workbench_moderation_state_new != workbench_moderation_state_published()) {
+      $node->path = array('alias' => '', 'pathauto' => 0);
+    }
+  }
+
+  $node->workbench_path_revision = $path_revision;
+}
+
+/**
+ * Implements hook_workbench_moderation_transition().
+ */
+function workbench_path_revision_workbench_moderation_transition($node, $previous_state, $new_state) {
+  $going_live = $new_state == 'published' && $new_state != $previous_state;
+  $state_changed = $node->path['pathauto'] != $node->workbench_path_revision['pathauto'];
+  $alias_changed = $node->path['alias'] != $node->workbench_path_revision['alias'];
+
+  if ($going_live && ($state_changed || $alias_changed)) {
+    $new_path = $node->path;
+    if (!empty($node->workbench_path_revision['alias'])) {
+      $new_path['alias'] = $node->workbench_path_revision['alias'];
+    }
+    path_save($new_path);
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function workbench_path_revision_node_insert($node) {
+  $node->workbench_path_revision['nid'] = $node->nid;
+  $node->workbench_path_revision['vid'] = $node->vid;
+  $node->workbench_path_revision['language'] = entity_language('node', $node);
+  workbench_path_revision_save($node->workbench_path_revision);
+}
+
+/**
+ * Implements hook_node_update().
+ */
+function workbench_path_revision_node_update($node) {
+  workbench_path_revision_node_insert($node);
+}
+
+/**
+ * Implements hook_node_delete().
+ */
+function workbench_path_revision_node_delete($node) {
+  db_delete('workbench_path_revision')
+    ->condition('nid', $node->nid)
+    ->execute();
+}
+
+/**
+ * Save the path revision for node.
+ *
+ * @param $entity
+ *   The node object.
+ * @param $path_revision
+ */
+function workbench_path_revision_save($path_revision) {
+  db_merge('workbench_path_revision')
+    ->key(array(
+      'nid' => $path_revision['nid'],
+      'vid' => $path_revision['vid'],
+      'language' => $path_revision['language'],
+    ))
+    ->fields(array(
+      'nid' => $path_revision['nid'],
+      'vid' => $path_revision['vid'],
+      'language' => $path_revision['language'],
+      'alias' => $path_revision['alias'],
+      'pathauto' => $path_revision['pathauto'],
+    ))
+    ->execute();
+}
+
+/**
+ * Load a pathauto state for an entity.
+ *
+ * @param $entity_type
+ *   An entity type.
+ * @param $entity_id
+ *   An entity ID.
+ *
+ * @return object
+ *   Path revision object from DB.
+ */
+function workbench_path_revision_load($nid, $vid = NULL, $language = NULL) {
+  $conditions = array();
+  if ($vid) {
+    $conditions['vid'] = $vid;
+  }
+  if ($language) {
+    $conditions['language'] = $language;
+  }
+
+  $path_revision = workbench_path_revision_load_multiple(array($nid), $conditions);
+  return !empty($path_revision) ? reset($path_revision) : FALSE;
+}
+
+/**
+ * Load a pathauto state for multiple entities.
+ *
+ * @param $entity_type
+ *   An entity type.
+ * @param $entity_ids
+ *   An array of entity IDs.
+ *
+ * @return array
+ *   Array of path revision objects from DB.
+ */
+function workbench_path_revision_load_multiple($nids, $conditions = NULL) {
+  $query = db_select('workbench_path_revision', 'wp', array())
+    ->fields('wp')
+    ->condition('nid', $nids, 'IN');
+  if ($conditions) {
+    foreach ($conditions as $field => $value) {
+      $query->condition($field, $value);
+    }
+  }
+
+  $path_revisions = $query
+    ->execute()
+    ->fetchAllAssoc('nid', PDO::FETCH_ASSOC);
+
+  return $path_revisions;
+}
+
+/**
+ * Implements hook_redirect_presave().
+ *
+ * @see https://drupal.org/node/1945558#comment-7500630
+ */
+function workbench_path_revision_redirect_presave($redirect) {
+  // Remove redirects pointing to aliases of the node it handles.
+  $query = db_select('url_alias', 'u')
+    ->fields('u', array('alias'));
+  $query->join('redirect', 'r', 'u.alias = r.source');
+  $query->fields('r', array('rid'));
+  $results = $query->execute();
+
+  foreach ($results as $record) {
+    db_delete('redirect')
+      ->condition('rid', $record->rid)
+      ->execute();
+  }
+}
