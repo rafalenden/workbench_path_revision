@@ -59,16 +59,18 @@ function workbench_path_revision_node_presave($node) {
  * Implements hook_workbench_moderation_transition().
  */
 function workbench_path_revision_workbench_moderation_transition($node, $previous_state, $new_state) {
-  $going_live = $new_state == 'published' && $new_state != $previous_state;
-  $state_changed = $node->path['pathauto'] != $node->workbench_path_revision['pathauto'];
-  $alias_changed = $node->path['alias'] != $node->workbench_path_revision['alias'];
+  if (isset($node->path['pathauto'])) {
+    $going_live = $new_state == 'published' && $new_state != $previous_state;
+    $state_changed = $node->path['pathauto'] != $node->workbench_path_revision['pathauto'];
+    $alias_changed = $node->path['alias'] != $node->workbench_path_revision['alias'];
 
-  if ($going_live && ($state_changed || $alias_changed)) {
-    $new_path = $node->path;
-    if (!empty($node->workbench_path_revision['alias'])) {
-      $new_path['alias'] = $node->workbench_path_revision['alias'];
+    if ($going_live && ($state_changed || $alias_changed)) {
+      $new_path = $node->path;
+      if (!empty($node->workbench_path_revision['alias'])) {
+        $new_path['alias'] = $node->workbench_path_revision['alias'];
+      }
+      path_save($new_path);
     }
-    path_save($new_path);
   }
 }
 
