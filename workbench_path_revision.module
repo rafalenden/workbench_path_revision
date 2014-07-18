@@ -29,7 +29,6 @@ function workbench_path_revision_node_load($nodes, $types) {
 function workbench_path_revision_form_node_form_alter(&$form, $form_state) {
   $node = &$form['#node'];
   $entity_language = entity_language('node', $node);
-  krumo($node);
 
   // Because workbench_moderation overrides page callback for "node/%node/edit"
   // information about path has to be added here.
