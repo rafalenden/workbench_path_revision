@@ -100,8 +100,6 @@ function workbench_path_revision_node_insert($node) {
  * Implements hook_node_presave().
  */
 function workbench_path_revision_node_presave($node) {
-//  dd(microtime(), 'workbench_path_revision_node_presave');
-
   $node_language = entity_language('node', $node);
 
   $node->workbench_path_revision[$node_language] = array(
