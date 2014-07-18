@@ -102,7 +102,7 @@ function workbench_path_revision_node_presave($node) {
   $node_language = entity_language('node', $node);
 
   $node->workbench_path_revision[$node_language] = array(
-    'pathauto' => isset($node->path['pathauto']) ? $node->path['pathauto'] : 1,
+    'pathauto' => isset($node->path['pathauto']) ? (int) $node->path['pathauto'] : 1,
     'alias' => isset($node->path['pathauto']) && empty($node->path['pathauto']) ? $node->path['alias'] : '',
     'language' => $node_language,
   );
@@ -117,8 +117,6 @@ function workbench_path_revision_node_presave($node) {
  * Implements hook_node_update().
  */
 function workbench_path_revision_node_update($node) {
-//  dd_box($node->workbench_path_revision, $node->vid);
-
   foreach ($node->workbench_path_revision as $path_revision) {
     db_merge('workbench_path_revision')
       ->key(array(
