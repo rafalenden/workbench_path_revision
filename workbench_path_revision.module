@@ -27,12 +27,12 @@ function workbench_path_revision_node_load($nodes, $types) {
  * Implements hook_form_BASE_FORM_ID_alter() for node_form().
  */
 function workbench_path_revision_form_node_form_alter(&$form, $form_state) {
-  $node = &$form['#node'];
+  $node = &$form_state['node'];
   $entity_language = entity_language('node', $node);
 
   // Because workbench_moderation overrides page callback for "node/%node/edit"
   // information about path has to be added here.
-  if (!empty($node->workbench_path_revision[$entity_language]['pathauto']) && isset($form['path']['alias'])) {
+  if (isset($node->workbench_path_revision[$entity_language]['pathauto']) && isset($form['path']['alias'])) {
     $form['path']['pathauto']['#default_value'] = $node->workbench_path_revision[$entity_language]['pathauto'];
   }
   if (!empty($node->workbench_path_revision[$entity_language]['alias']) && isset($form['path']['alias'])) {
