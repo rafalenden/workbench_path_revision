@@ -61,6 +61,10 @@ function workbench_path_revision_update_live_aliases($node) {
     ->fetchAllAssoc('language', PDO::FETCH_ASSOC);
 
   foreach ($node->workbench_path_revision as $langcode => $path_revision) {
+    if (!empty($path_revision['no_update'])) {
+      continue;
+    }
+
     $path = array(
       'language' => $langcode,
       'alias' => $path_revision['alias'],
