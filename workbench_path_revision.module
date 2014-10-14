@@ -54,6 +54,10 @@ function workbench_path_revision_workbench_moderation_transition($node, $previou
  * Update aliases of node for all translations when node is being published.
  */
 function workbench_path_revision_update_live_aliases($node) {
+  if (!empty($path_revision['no_update'])) {
+    continue;
+  }
+
   $current_node_aliases = db_select('url_alias')
     ->condition('source', 'node/' . $node->nid)
     ->fields('url_alias')
