@@ -4,13 +4,16 @@
  * Implements hook_node_load().
  */
 function workbench_path_revision_node_load($nodes, $types) {
-  $vids = array();
+  $nids = array();
   foreach ($nodes as $node) {
-    $vids[] = $node->vid;
+    // Remove nodes that are not moderated.
+    if (workbench_moderation_node_type_moderated($node->type)) {
+      $nids[] = $node->nid;
+    }
   }
 
   // Add information about path revision to node object.
-  $path_revisions = workbench_path_revision_load_multiple($vids);
+  $path_revisions = workbench_path_revision_load_multiple($nids);
   foreach ($path_revisions as $langcode => $path_revision) {
     $node = &$nodes[$path_revision['nid']];
     $node->workbench_path_revision[$path_revision['language']] = $path_revision;
@@ -28,6 +31,11 @@ function workbench_path_revision_node_load($nodes, $types) {
  */
 function workbench_path_revision_form_node_form_alter(&$form, $form_state) {
   $node = &$form_state['node'];
+
+  if (!workbench_moderation_node_type_moderated($node->type)) {
+    return;
+  }
+
   $entity_language = entity_language('node', $node);
 
   // Because workbench_moderation overrides page callback for "node/%node/edit"
@@ -37,16 +45,6 @@ function workbench_path_revision_form_node_form_alter(&$form, $form_state) {
   }
   if (!empty($node->workbench_path_revision[$entity_language]['alias']) && isset($form['path']['alias'])) {
     $form['path']['alias']['#default_value'] = $node->workbench_path_revision[$entity_language]['alias'];
-  }
-}
-
-/**
- * Implements hook_workbench_moderation_transition().
- */
-function workbench_path_revision_workbench_moderation_transition($node, $previous_state, $new_state) {
-  // New state of node is published so let's save aliases for all translations.
-  if ($new_state == 'published') {
-    workbench_path_revision_update_live_aliases($node);
   }
 }
 
@@ -61,10 +59,6 @@ function workbench_path_revision_update_live_aliases($node) {
     ->fetchAllAssoc('language', PDO::FETCH_ASSOC);
 
   foreach ($node->workbench_path_revision as $langcode => $path_revision) {
-    if (!empty($path_revision['no_update'])) {
-      continue;
-    }
-
     $path = array(
       'language' => $langcode,
       'alias' => $path_revision['alias'],
@@ -93,49 +87,59 @@ function workbench_path_revision_update_live_aliases($node) {
 }
 
 /**
- * Implements hook_node_insert().
- */
-function workbench_path_revision_node_insert($node) {
-  workbench_path_revision_node_update($node);
-}
-
-/**
  * Implements hook_node_presave().
  */
 function workbench_path_revision_node_presave($node) {
+  if (!workbench_moderation_node_type_moderated($node->type)) {
+    return;
+  }
+
   $node_language = entity_language('node', $node);
 
-  $node->workbench_path_revision[$node_language] = array(
-    'pathauto' => isset($node->path['pathauto']) ? (int) $node->path['pathauto'] : 1,
-    'alias' => isset($node->path['pathauto']) && empty($node->path['pathauto']) ? $node->path['alias'] : '',
-    'language' => $node_language,
-  );
+  // Check if other modules didn't override path data.
+  if (empty($node->workbench_path_revision[$node_language]['overridden']) || !isset($node->workbench_path_revision[$node_language])) {
+    $node->workbench_path_revision[$node_language]['pathauto'] = isset($node->path['pathauto'])
+      ? (int) $node->path['pathauto'] : 1;
+    $node->workbench_path_revision[$node_language]['alias'] = isset($node->path['pathauto']) && empty($node->path['pathauto'])
+      ? $node->path['alias'] : '';
+    $node->workbench_path_revision[$node_language]['language'] = $node_language;
+  }
 
-  // Block saving URL aliases for draft content.
-  if (isset($node->workbench_moderation_state_new) && $node->workbench_moderation_state_new != 'published') {
+  // Block saving URL aliases.
+  if (isset($node->workbench_path_revision)) {
     $node->path = array('alias' => '', 'pathauto' => 0);
   }
+
+  // Update aliases for other translations.
+  // 'updating_live_revision' is set only if executed from workbench_moderation_store()
+  if (isset($node->workbench_moderation['current']->state) && $node->workbench_moderation['current']->state == 'published' && !empty($node->workbench_moderation['updating_live_revision'])) {
+    workbench_path_revision_update_live_aliases($node);
+  }
+}
+
+/**
+ * Implements hook_node_insert().
+ */
+function workbench_path_revision_node_insert($node) {
+  if (!workbench_moderation_node_type_moderated($node->type)) {
+    return;
+  }
+
+  workbench_path_revision_node_update($node);
 }
 
 /**
  * Implements hook_node_update().
  */
 function workbench_path_revision_node_update($node) {
+  if (!workbench_moderation_node_type_moderated($node->type)) {
+    return;
+  }
+
   foreach ($node->workbench_path_revision as $path_revision) {
-    db_merge('workbench_path_revision')
-      ->key(array(
-        'nid' => $node->nid,
-        'vid' => $node->vid,
-        'language' => $path_revision['language'],
-      ))
-      ->fields(array(
-        'nid' => $node->nid,
-        'vid' => $node->vid,
-        'language' => $path_revision['language'],
-        'alias' => $path_revision['alias'],
-        'pathauto' => $path_revision['pathauto'],
-      ))
-      ->execute();
+    $path_revision['nid'] = $node->nid;
+    $path_revision['vid'] = $node->vid;
+    workbench_path_revision_save($path_revision);
   }
 }
 
@@ -195,8 +199,8 @@ function workbench_path_revision_load($vid, $conditions = array()) {
 /**
  * Load a pathauto state for multiple entities.
  *
- * @param $vids
- *   An array of node VDs.
+ * @param $nids
+ *   An array of node NIDs.
  * @param $conditions
  *   An associative array of conditions on the {workbench_path_revision}
  *   table, where the keys are the database fields and the values are the
@@ -207,10 +211,15 @@ function workbench_path_revision_load($vid, $conditions = array()) {
  * @return array
  *   Array of path revisions from DB.
  */
-function workbench_path_revision_load_multiple($vids, $conditions = NULL) {
+function workbench_path_revision_load_multiple($nids, $conditions = NULL) {
+  if (!$nids) {
+    return array();
+  }
+
   $query = db_select('workbench_path_revision', 'pr')
     ->fields('pr')
-    ->condition('vid', $vids);
+    ->condition('nid', $nids)
+    ->orderBy('vid', 'ASC');
 
   // Add conditions.
   if ($conditions) {
@@ -220,9 +229,36 @@ function workbench_path_revision_load_multiple($vids, $conditions = NULL) {
   }
 
   return $query
-    ->orderBy('language')
     ->execute()
     ->fetchAllAssoc('language', PDO::FETCH_ASSOC);
+}
+
+/**
+ * Disable path for given node translation from being updated.
+ *
+ * @param object $node
+ *   Node object.
+ * @param $langcode
+ *   Language of path that will be prevented from updating.
+ */
+function workbench_path_revision_disable_path_update($node, $langcode, $old_alias = NULL) {
+  $node->workbench_path_revision[$langcode]['pathauto'] = 0;
+  if ($langcode == $node->path['language']) {
+    $old_alias = $node->path['alias'];
+  }
+  elseif (empty($old_alias)) {
+    $old_path = path_load(array(
+      'source' => "node/$node->nid",
+      'language' => $langcode,
+    ));
+    $old_alias = $old_path['alias'];
+  }
+  $node->workbench_path_revision[$langcode]['alias'] = $old_alias;
+  $node->workbench_path_revision[$langcode]['overridden'] = TRUE;
+
+  if ($node->vid == $node->workbench_path_revision[$langcode]->vid) {
+    $node->path['pathauto'] = 0;
+  }
 }
 
 /**
