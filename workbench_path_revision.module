@@ -267,6 +267,11 @@ function workbench_path_revision_disable_path_update($node, $langcode, $old_alia
  * @see https://drupal.org/node/1945558#comment-7500630
  */
 function workbench_path_revision_redirect_presave($redirect) {
+  // Creating automatic redirects is disabled.
+  if (!variable_get('redirect_auto_redirect', TRUE)) {
+    return;
+  }
+
   // Remove redirects pointing to aliases of the node it handles.
   $query = db_select('url_alias', 'u')
     ->fields('u', array('alias'));
