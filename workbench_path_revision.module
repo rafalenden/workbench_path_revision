@@ -154,6 +154,56 @@ function workbench_path_revision_node_delete($node) {
 }
 
 /**
+ * Implements hook_form_FORM_ID_alter().
+ */
+function workbench_path_revision_form_workbench_moderation_moderate_form_alter(&$form, &$form_state, $form_id) {
+  $form['#validate'][] = 'workbench_path_revision_form_workbench_moderation_moderate_form_validate';
+}
+
+/**
+ * Validation callback for workbench_moderation_moderate_form().
+ *
+ * Checks if path aliases from revisions are already in use.
+ */
+function workbench_path_revision_form_workbench_moderation_moderate_form_validate($form, &$form_state) {
+  if ($form_state['values']['state'] == 'published') {
+    $node = &$form['node']['#value'];
+    $errors = array();
+    $languages = language_list();
+
+    foreach ($node->workbench_path_revision as $path_revision) {
+      if ($path_revision['alias'] && !$path_revision['pathauto']) {
+        $has_alias = db_query("SELECT COUNT(alias) FROM {url_alias} WHERE source <> :source AND alias = :alias AND language = :language", array(
+          ':source' => "node/$node->nid",
+          ':alias' => $path_revision['alias'],
+          ':language' => $path_revision['language'],
+        ));
+
+        if ($has_alias) {
+          $errors[] = t('The alias %alias is already in use in %language language.', array(
+            '%alias' => $path_revision['alias'],
+            '%language' => $languages[$path_revision['language']]->name,
+          ));
+        }
+      }
+    }
+
+    // Display errors if any.
+    if ($errors) {
+      if (count($errors) > 1) {
+        $message = form_get_errors()
+          ? implode('</li><li>', $errors)
+          : '<ul><li>' . implode('</li><li>', $errors) . '</li></ul>';
+      }
+      else {
+        $message = $errors[0];
+      }
+      form_set_error('', $message);
+    }
+  }
+}
+
+/**
  * Save the path revision for node.
  *
  * @param $entity
