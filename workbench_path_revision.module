@@ -179,8 +179,8 @@ function workbench_path_revision_save($path_revision) {
 /**
  * Load a pathauto state for an entity.
  *
- * @param $vid
- *   The node revision ID.
+ * @param $nid
+ *   The node ID.
  * @param $conditions
  *   An associative array of conditions on the {workbench_path_revision}
  *   table, where the keys are the database fields and the values are the
@@ -191,8 +191,8 @@ function workbench_path_revision_save($path_revision) {
  * @return array
  *   Path revision from DB.
  */
-function workbench_path_revision_load($vid, $conditions = array()) {
-  $path_revision = workbench_path_revision_load_multiple(array($vid), $conditions);
+function workbench_path_revision_load($nid, $conditions = array()) {
+  $path_revision = workbench_path_revision_load_multiple(array($nid), $conditions);
   return !empty($path_revision) ? reset($path_revision) : FALSE;
 }
 
@@ -258,6 +258,32 @@ function workbench_path_revision_disable_path_update($node, $langcode, $old_alia
 
   if ($node->vid == $node->workbench_path_revision[$langcode]->vid) {
     $node->path['pathauto'] = 0;
+  }
+}
+
+/**
+ * Implements hook_path_update().
+ *
+ * Update revisioned paths when alias is updated outside node_save().
+ */
+function workbench_path_revision_path_update($path) {
+  if ($path['alias'] != $path['original']['alias'] && fnmatch('node/*', $path['source'])) {
+    list(, $nid) = explode('/', $path['source']);
+    $node = node_load($nid);
+
+    // Update only path revision if node don't have draft version.
+    if (workbench_moderation_node_is_current($node)) {
+      $path_revision = workbench_path_revision_load($nid, array(
+        'vid' => $node->vid,
+        'language' => $path['language'],
+        'alias' => $path['original']['alias'],
+      ));
+
+      if (!empty($path_revision)) {
+        $path_revision['alias'] = $path['alias'];
+        workbench_path_revision_save($path_revision);
+      }
+    }
   }
 }
 
