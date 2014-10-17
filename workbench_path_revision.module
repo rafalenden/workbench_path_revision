@@ -154,6 +154,48 @@ function workbench_path_revision_node_delete($node) {
 }
 
 /**
+ * Validate forms where alias of node's path is changed.
+ *
+ * @param object $node
+ *   Node object.
+ * @param array $form_state
+ *   Form state.
+ * @param string $element_name
+ *   Element which will be used to mark errors.
+ * @param string $entity_language
+ *   Language of node entity.
+ */
+function workbench_path_revision_validate($node, $form_state, $element_name = '', $entity_language = NULL) {
+  $errors = array();
+  $languages = language_list();
+
+  foreach ($node->workbench_path_revision as $langcode => $path_revision) {
+    if ($entity_language == $langcode) {
+      $path_revision['alias'] = $form_state['values']['path']['alias'];
+      $path_revision['pathauto'] = $form_state['values']['path']['pathauto'];
+      $path_revision['language'] = $langcode;
+    }
+
+    if ($path_revision['alias'] && !$path_revision['pathauto']) {
+
+      if ($alias_in_use = workbench_path_revision_in_use($node->nid, $path_revision['alias'], $path_revision['language'])) {
+        $errors[] = t('The alias %alias is already in use in %language language. <a href="@url">Go to content that uses this alias</a> (@source).', array(
+          '%alias' => $path_revision['alias'],
+          '%language' => $languages[$path_revision['language']]->name,
+          '@url' => url($alias_in_use->alias, array('language' => $languages[$alias_in_use->language])),
+          '@source' => $alias_in_use->source,
+        ));
+      }
+    }
+  }
+
+  // Display errors if any.
+  if ($errors) {
+    workbench_path_revision_form_set_errors($element_name, $errors);
+  }
+}
+
+/**
  * Implements hook_form_FORM_ID_alter().
  */
 function workbench_path_revision_form_workbench_moderation_moderate_form_alter(&$form, &$form_state, $form_id) {
@@ -168,39 +210,72 @@ function workbench_path_revision_form_workbench_moderation_moderate_form_alter(&
 function workbench_path_revision_form_workbench_moderation_moderate_form_validate($form, &$form_state) {
   if ($form_state['values']['state'] == 'published') {
     $node = &$form['node']['#value'];
-    $errors = array();
-    $languages = language_list();
-
-    foreach ($node->workbench_path_revision as $path_revision) {
-      if ($path_revision['alias'] && !$path_revision['pathauto']) {
-        $has_alias = db_query("SELECT COUNT(alias) FROM {url_alias} WHERE source <> :source AND alias = :alias AND language = :language", array(
-          ':source' => "node/$node->nid",
-          ':alias' => $path_revision['alias'],
-          ':language' => $path_revision['language'],
-        ));
-
-        if ($has_alias) {
-          $errors[] = t('The alias %alias is already in use in %language language.', array(
-            '%alias' => $path_revision['alias'],
-            '%language' => $languages[$path_revision['language']]->name,
-          ));
-        }
-      }
-    }
-
-    // Display errors if any.
-    if ($errors) {
-      if (count($errors) > 1) {
-        $message = form_get_errors()
-          ? implode('</li><li>', $errors)
-          : '<ul><li>' . implode('</li><li>', $errors) . '</li></ul>';
-      }
-      else {
-        $message = $errors[0];
-      }
-      form_set_error('', $message);
-    }
+    workbench_path_revision_validate($node, $form_state, '', entity_language('node', $node));
   }
+}
+
+/**
+ * Implements hook_node_validate().
+ *
+ * Checks if path aliases from revisions are already in use.
+ */
+function workbench_path_revision_node_validate($node, $form, &$form_state) {
+  if (isset($form_state['values']['workbench_moderation_state_new']) && $form_state['values']['workbench_moderation_state_new'] == 'published') {
+    $node_language = entity_language('node', $node);
+    if (!empty($node->nid)) {
+      $node = &$form_state['node'];
+    }
+
+    if (!isset($node->workbench_path_revision[$node_language])) {
+      $node->workbench_path_revision[$node_language]['pathauto'] = isset($node->path['pathauto'])
+        ? (int) $node->path['pathauto'] : 1;
+      $node->workbench_path_revision[$node_language]['alias'] = isset($node->path['pathauto']) && empty($node->path['pathauto'])
+        ? $node->path['alias'] : '';
+      $node->workbench_path_revision[$node_language]['language'] = $node_language;
+    }
+
+    workbench_path_revision_validate($node, $form_state, 'path][alias', $node_language);
+  }
+}
+
+/**
+ * Set multiple errors with form_set_error().
+ *
+ * @param array $errors
+ */
+function workbench_path_revision_form_set_errors($name, array $errors = array()) {
+  if (count($errors) > 1) {
+    $message = form_get_errors()
+      ? implode('</li><li>', $errors)
+      : '<ul><li>' . implode('</li><li>', $errors) . '</li></ul>';
+  }
+  else {
+    $message = $errors[0];
+  }
+  form_set_error($name, $message);
+}
+
+/**
+ * Checks if alias is already in use.
+ *
+ * @param $nid
+ *   Node id.
+ * @param $alias
+ *   Alias to check.
+ * @param $langcode
+ *   Language code of alias.
+ *
+ * @return bool
+ *   TRUE of alias already is in use, FALSE otherwise.
+ */
+function workbench_path_revision_in_use($nid, $alias, $langcode) {
+  $alias_in_use = db_query("SELECT * FROM {url_alias} WHERE source <> :source AND alias = :alias AND language = :language LIMIT 1", array(
+    ':source' => "node/$nid",
+    ':alias' => $alias,
+    ':language' => $langcode,
+  ))->fetchAllAssoc('pid');
+
+  return $alias_in_use ? current($alias_in_use) : FALSE;
 }
 
 /**
