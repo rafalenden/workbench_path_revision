@@ -425,7 +425,7 @@ function workbench_path_revision_redirect_presave($redirect) {
   // Remove redirects pointing to aliases of the node it handles.
   $query = db_select('url_alias', 'u')
     ->fields('u', array('alias'));
-  $query->join('redirect', 'r', 'u.alias = r.source');
+  $query->join('redirect', 'r', 'u.alias = r.source AND u.language = r.language');
   $query->fields('r', array('rid'));
   $results = $query->execute();
 
