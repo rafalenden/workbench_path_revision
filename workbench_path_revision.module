@@ -19,7 +19,9 @@ function workbench_path_revision_node_load($nodes, $types) {
     $node = &$nodes[$path_revision['nid']];
     $node->workbench_path_revision[$path_revision['language']] = $path_revision;
     if (entity_language('node', $node) == $path_revision['language']) {
-      $node->path['pathauto'] = (bool) $path_revision['pathauto'];
+      if (module_exists('pathauto')) {
+        $node->path['pathauto'] = (bool) $path_revision['pathauto'];
+      }
       if (!empty($path_revision['alias'])) {
         $node->path['alias'] = $path_revision['alias'];
       }
@@ -71,7 +73,7 @@ function workbench_path_revision_update_live_aliases($node) {
     }
 
     // Pathauto is on
-    if ($path_revision['pathauto']) {
+    if (module_exists('pathauto') && $path_revision['pathauto']) {
       $translated_node = clone $node;
       $translated_node->path = $path;
       $options = array(
@@ -99,10 +101,10 @@ function workbench_path_revision_node_presave($node) {
 
   // Check if other modules didn't override path data.
   if (empty($node->workbench_path_revision[$node_language]['overridden']) || !isset($node->workbench_path_revision[$node_language])) {
-    $node->workbench_path_revision[$node_language]['pathauto'] = isset($node->path['pathauto'])
-      ? (int) $node->path['pathauto'] : 1;
-    $node->workbench_path_revision[$node_language]['alias'] = isset($node->path['pathauto']) && empty($node->path['pathauto'])
-      ? $node->path['alias'] : '';
+    $node->workbench_path_revision[$node_language]['pathauto'] =
+      isset($node->path['pathauto']) ? (int) $node->path['pathauto'] : 1;
+    $node->workbench_path_revision[$node_language]['alias'] =
+      empty($node->path['pathauto']) ? $node->path['alias'] : '';
     $node->workbench_path_revision[$node_language]['language'] = $node_language;
   }
 
@@ -172,12 +174,17 @@ function workbench_path_revision_validate($node, $form_state, $element_name = ''
   foreach ($node->workbench_path_revision as $langcode => $path_revision) {
     if ($entity_language == $langcode) {
       $path_revision['alias'] = $form_state['values']['path']['alias'];
-      $path_revision['pathauto'] = $form_state['values']['path']['pathauto'];
       $path_revision['language'] = $langcode;
+
+      if (isset($form_state['values']['path']['pathauto'])) {
+        $path_revision['pathauto'] = $form_state['values']['path']['pathauto'];
+      }
+      else {
+        $path_revision['pathauto'] = 0;
+      }
     }
 
     if ($path_revision['alias'] && !$path_revision['pathauto']) {
-
       if ($alias_in_use = workbench_path_revision_in_use($node->nid, $path_revision['alias'], $path_revision['language'])) {
         $errors[] = t('The alias %alias is already in use in %language language. <a href="@url">Go to content that uses this alias</a> (@source).', array(
           '%alias' => $path_revision['alias'],
@@ -227,10 +234,8 @@ function workbench_path_revision_node_validate($node, $form, &$form_state) {
     }
 
     if (!isset($node->workbench_path_revision[$node_language])) {
-      $node->workbench_path_revision[$node_language]['pathauto'] = isset($node->path['pathauto'])
-        ? (int) $node->path['pathauto'] : 1;
-      $node->workbench_path_revision[$node_language]['alias'] = isset($node->path['pathauto']) && empty($node->path['pathauto'])
-        ? $node->path['alias'] : '';
+      $node->workbench_path_revision[$node_language]['pathauto'] = isset($node->path['pathauto']) ? (int) $node->path['pathauto'] : 1;
+      $node->workbench_path_revision[$node_language]['alias'] = empty($node->path['pathauto']) ? $node->path['alias'] : '';
       $node->workbench_path_revision[$node_language]['language'] = $node_language;
     }
 
@@ -303,7 +308,7 @@ function workbench_path_revision_save($path_revision) {
 }
 
 /**
- * Load a pathauto state for an entity.
+ * Load a path revision for an entity.
  *
  * @param $vid
  *   The node version ID.
@@ -323,7 +328,7 @@ function workbench_path_revision_load($vid, $conditions = array()) {
 }
 
 /**
- * Load a pathauto state for multiple entities.
+ * Load a path revision state for multiple entities.
  *
  * @param $vids
  *   An array of node version IDs.
@@ -381,7 +386,7 @@ function workbench_path_revision_disable_path_update($node, $langcode, $old_alia
   $node->workbench_path_revision[$langcode]['alias'] = $old_alias;
   $node->workbench_path_revision[$langcode]['overridden'] = TRUE;
 
-  if ($node->vid == $node->workbench_path_revision[$langcode]->vid) {
+  if (module_exists('pathauto') && $node->vid == $node->workbench_path_revision[$langcode]->vid) {
     $node->path['pathauto'] = 0;
   }
 }
