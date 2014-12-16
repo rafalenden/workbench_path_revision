@@ -97,6 +97,16 @@ function workbench_path_revision_node_presave($node) {
     return;
   }
 
+  // Allow other modules to skip the path revision-ing part, because if saving
+  // multiple nodes in a programmatic fashion (multiple node_save calls within
+  // the same request), workbench_moderation_store will only be executed for
+  // the first node_save, and the rest of the nodes will have their aliases
+  // lost, because workbench_path_revision_update_live_aliases() will not be
+  // executed.
+  if (isset($node->workbench_path_revision_skip) && !empty($node->workbench_path_revision_skip)) {
+    return;
+  }
+
   $node_language = entity_language('node', $node);
 
   // Check if other modules didn't override path data.
@@ -139,10 +149,14 @@ function workbench_path_revision_node_update($node) {
     return;
   }
 
-  foreach ($node->workbench_path_revision as $path_revision) {
-    $path_revision['nid'] = $node->nid;
-    $path_revision['vid'] = $node->vid;
-    workbench_path_revision_save($path_revision);
+  // The workbench_path_revision property might not be set, if exclusively
+  // asked to skip it.
+  if (isset($node->workbench_path_revision)) {
+    foreach ($node->workbench_path_revision as $path_revision) {
+      $path_revision['nid'] = $node->nid;
+      $path_revision['vid'] = $node->vid;
+      workbench_path_revision_save($path_revision);
+    }
   }
 }
 
