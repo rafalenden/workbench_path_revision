@@ -3,4 +3,13 @@ description = Path revisioning and fixes related to URL aliases and Workbench mo
 package = Workbench
 core = 7.x
 
+dependencies[] = path
 dependencies[] = workbench_moderation
+
+test_dependencies[] = workbench
+test_dependencies[] = pathauto
+test_dependencies[] = title
+test_dependencies[] = entity_translation
+
+; Tests
+files[] = workbench_path_revision.test

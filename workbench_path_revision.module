@@ -173,14 +173,16 @@ function workbench_path_revision_validate($node, $form_state, $element_name = ''
 
   foreach ($node->workbench_path_revision as $langcode => $path_revision) {
     if ($entity_language == $langcode) {
-      $path_revision['alias'] = $form_state['values']['path']['alias'];
+      $path_revision['alias'] = '';
+      $path_revision['pathauto'] = 0;
       $path_revision['language'] = $langcode;
+
+      if (isset($form_state['values']['path']['alias'])) {
+        $path_revision['alias'] = $form_state['values']['path']['alias'];
+      }
 
       if (isset($form_state['values']['path']['pathauto'])) {
         $path_revision['pathauto'] = $form_state['values']['path']['pathauto'];
-      }
-      else {
-        $path_revision['pathauto'] = 0;
       }
     }
 
